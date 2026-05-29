@@ -1,0 +1,12 @@
+# Modelfile — Base Model (No Domain Customization)
+# This represents the "before training" baseline
+# Used for left panel in the side-by-side UI
+
+FROM llama2:latest
+
+PARAMETER temperature 0.7
+PARAMETER top_p 0.9
+PARAMETER top_k 40
+PARAMETER num_ctx 4096
+
+SYSTEM """You are a helpful assistant."""
