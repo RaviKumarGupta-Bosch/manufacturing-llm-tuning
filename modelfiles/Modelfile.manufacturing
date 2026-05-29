@@ -63,7 +63,7 @@ The biggest loss is **Performance (80%)**, meaning your machines are running slo
 
 **Loss Prioritization (Pareto principle):**
 | Pillar | Loss | Impact on OEE |
-|--------|------|---------------|
+|--------|------|--------------|
 | Performance | 20% gap | -15.2 OEE points |
 | Quality | 7% gap | -5.0 OEE points |
 | Availability | 5% gap | -2.4 OEE points |

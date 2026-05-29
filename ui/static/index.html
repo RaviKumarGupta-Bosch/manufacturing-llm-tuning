@@ -1,0 +1,915 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Manufacturing LLM Tuning — Side-by-Side Comparison</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+
+<!-- ═══ HEADER ═══════════════════════════════════════════════════════════════ -->
+<header class="app-header">
+  <div class="header-left">
+    <span class="logo">⚙️</span>
+    <div>
+      <h1>Manufacturing LLM Tuning</h1>
+      <p class="subtitle">Base Model vs Fine-Tuned Expert — Side-by-Side</p>
+    </div>
+  </div>
+  <div class="header-right">
+    <div id="health-badge" class="badge badge-loading">Connecting…</div>
+    <a href="/docs" target="_blank" class="btn-icon" title="API Docs">API</a>
+  </div>
+</header>
+
+<!-- ═══ TAB NAVIGATION ═══════════════════════════════════════════════════ -->
+<nav class="tab-nav">
+  <button class="tab-btn active" id="tab-compare-btn" onclick="showTab('compare')">⚡ Compare Models</button>
+  <button class="tab-btn" id="tab-tutorial-btn" onclick="showTab('tutorial')">📚 Learning Tutorial</button>
+</nav>
+
+<!-- ═══ COMPARE VIEW ══════════════════════════════════════════════════════════ -->
+<div id="view-compare" class="tab-view">
+
+<!-- ═══ SETUP BANNER (shown when models not ready) ════════════════════════ -->
+<div id="setup-banner" class="setup-banner hidden">
+  <strong>Setup needed:</strong> Models not yet created.
+  Run <code>python scripts/create_models.py</code> then refresh.
+  <button onclick="checkHealth()" class="btn-sm">Recheck</button>
+</div>
+
+<!-- ═══ PROMPT AREA ══════════════════════════════════════════════════════════ -->
+<section class="prompt-section">
+
+  <!-- Model selector row -->
+  <div class="model-selector-row">
+    <div class="model-selector-group">
+      <label>Left Model</label>
+      <select id="model-left" class="model-select"></select>
+      <span class="model-badge base-badge">BASE</span>
+    </div>
+
+    <div class="vs-divider">VS</div>
+
+    <div class="model-selector-group">
+      <label>Right Model</label>
+      <select id="model-right" class="model-select"></select>
+      <span class="model-badge tuned-badge">TUNED</span>
+    </div>
+  </div>
+
+  <!-- Prompt input -->
+  <div class="prompt-input-wrapper">
+    <textarea
+      id="prompt-input"
+      rows="3"
+      placeholder="Enter your manufacturing question here… (e.g. 'CNC spindle vibration jumped from 0.8 to 3.9 mm/s. What should I do?')"
+      maxlength="2000"
+    ></textarea>
+    <div class="prompt-toolbar">
+      <div class="prompt-toolbar-left">
+        <button class="btn-sample" onclick="toggleSamplePicker()">📋 Sample Prompts</button>
+        <span id="char-count" class="char-count">0 / 2000</span>
+      </div>
+      <div class="prompt-toolbar-right">
+        <label class="param-label">Temp
+          <input type="range" id="temperature" min="0" max="1" step="0.05" value="0.4" />
+          <span id="temp-val">0.4</span>
+        </label>
+        <button id="send-btn" class="btn-primary" onclick="sendPrompt()">
+          <span class="btn-icon-inner">▶</span> Compare
+        </button>
+        <button id="stop-btn" class="btn-danger hidden" onclick="stopAll()">■ Stop</button>
+        <button class="btn-secondary" onclick="clearAll()">✕ Clear</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sample prompt picker (hidden by default) -->
+  <div id="sample-picker" class="sample-picker hidden"></div>
+
+</section>
+
+<!-- ═══ COMPARISON PANELS ═══════════════════════════════════════════════════ -->
+<section class="comparison-section">
+
+  <!-- Left Panel — Base Model -->
+  <div class="response-panel" id="panel-left">
+    <div class="panel-header">
+      <div class="panel-header-left">
+        <span class="panel-label base-label">BASE MODEL</span>
+        <span class="panel-model-name" id="panel-left-name">mfg-base</span>
+      </div>
+      <div class="panel-header-right">
+        <span class="metric-chip" id="left-time">—</span>
+        <span class="metric-chip" id="left-tps">—</span>
+        <button class="btn-copy" onclick="copyPanel('left')" title="Copy response">⎘</button>
+      </div>
+    </div>
+    <div class="panel-status" id="left-status"></div>
+    <div class="panel-body" id="panel-left-body">
+      <div class="empty-state">
+        <span class="empty-icon">🤖</span>
+        <p>Base model response will appear here</p>
+        <p class="empty-hint">No manufacturing context. General-purpose assistant.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right Panel — Tuned Model -->
+  <div class="response-panel" id="panel-right">
+    <div class="panel-header">
+      <div class="panel-header-left">
+        <span class="panel-label tuned-label">TUNED MODEL</span>
+        <span class="panel-model-name" id="panel-right-name">mfg-expert</span>
+      </div>
+      <div class="panel-header-right">
+        <span class="metric-chip" id="right-time">—</span>
+        <span class="metric-chip" id="right-tps">—</span>
+        <button class="btn-copy" onclick="copyPanel('right')" title="Copy response">⎘</button>
+      </div>
+    </div>
+    <div class="panel-status" id="right-status"></div>
+    <div class="panel-body" id="panel-right-body">
+      <div class="empty-state">
+        <span class="empty-icon">🏭</span>
+        <p>Tuned model response will appear here</p>
+        <p class="empty-hint">Manufacturing-domain expert. Knows OEE, FMEA, ISO standards.</p>
+      </div>
+    </div>
+  </div>
+
+</section>
+
+<!-- ═══ HISTORY ══════════════════════════════════════════════════════════════ -->
+<section class="history-section">
+  <div class="history-header">
+    <h3>Session History</h3>
+    <button class="btn-sm" onclick="clearHistory()">Clear</button>
+  </div>
+  <div id="history-list" class="history-list">
+    <div class="history-empty">No prompts sent yet.</div>
+  </div>
+</section>
+
+<!-- ═══ TRAINING EXPLAINER ═══════════════════════════════════════════════════ -->
+<section class="explainer-section">
+  <h3>What is Happening Under the Hood?</h3>
+  <div class="explainer-grid">
+
+    <div class="explainer-card base-card">
+      <h4>🤖 Base Model (Left)</h4>
+      <p>The raw Ollama model (<code>llama3.2</code>) with only a minimal system prompt:
+        <em>"You are a helpful assistant."</em></p>
+      <p>It has no manufacturing context. Answers are generic and miss domain-specific structure,
+        standards, and thresholds.</p>
+      <div class="code-block">Modelfile.base:
+FROM llama3.2
+SYSTEM "You are a helpful assistant."</div>
+    </div>
+
+    <div class="explainer-card tuned-card">
+      <h4>🏭 Tuned Model (Right)</h4>
+      <p>The same base model customized via <strong>Modelfile engineering</strong> — the simplest
+        form of LLM tuning (Level 1):</p>
+      <ul>
+        <li>Rich manufacturing system prompt with domain vocabulary</li>
+        <li>Structured response format enforced (Root Cause / Action / Priority / Standard)</li>
+        <li>Few-shot examples baked in via MESSAGE pairs</li>
+        <li>Lower temperature (0.3) for more consistent, precise answers</li>
+      </ul>
+      <div class="code-block">Modelfile.manufacturing:
+FROM llama3.2
+PARAMETER temperature 0.3
+SYSTEM "You are ManuBot, 20yr manufacturing expert..."
+MESSAGE user "..."
+MESSAGE assistant "..."</div>
+    </div>
+
+    <div class="explainer-card lora-card">
+      <h4>🧠 Level 3: LoRA Fine-Tuning (Advanced)</h4>
+      <p>For actual weight-level training, use <strong>Unsloth</strong> or <strong>Axolotl</strong>
+        with the provided JSONL training data:</p>
+      <ol>
+        <li>Run <code>python scripts/prepare_data.py</code> → generates Alpaca JSON</li>
+        <li>Fine-tune with Unsloth on the JSONL data (see tutorial)</li>
+        <li>Export to GGUF format</li>
+        <li>Import back to Ollama with a new Modelfile</li>
+      </ol>
+      <p>Training data: <code>data/manufacturing_train.jsonl</code> (10 domain conversations)</p>
+    </div>
+
+  </div>
+</section>
+
+</div><!-- end #view-compare -->
+
+<!-- ═══ TUTORIAL VIEW ════════════════════════════════════════════════════════ -->
+<div id="view-tutorial" class="tab-view hidden">
+  <div class="tutorial-layout">
+
+    <!-- ── Sidebar ────────────────────────────────────────────────────────── -->
+    <aside class="tut-sidebar">
+      <div class="tut-sidebar-header">
+        <span class="tut-sidebar-icon">📚</span>
+        <div>
+          <div class="tut-sidebar-title">Learning Path</div>
+          <div class="tut-sidebar-sub">8 steps · ~15 min</div>
+        </div>
+      </div>
+      <nav class="tut-nav">
+        <button class="tut-nav-item active" data-step="1" onclick="gotoStep(1)"><span class="tut-step-num">1</span><span>What Is Model Tuning?</span></button>
+        <button class="tut-nav-item" data-step="2" onclick="gotoStep(2)"><span class="tut-step-num">2</span><span>Project Setup</span></button>
+        <button class="tut-nav-item" data-step="3" onclick="gotoStep(3)"><span class="tut-step-num">3</span><span>Training Data Format</span></button>
+        <button class="tut-nav-item" data-step="4" onclick="gotoStep(4)"><span class="tut-step-num">4</span><span>Modelfile Engineering</span></button>
+        <button class="tut-nav-item" data-step="5" onclick="gotoStep(5)"><span class="tut-step-num">5</span><span>Build Your Models</span></button>
+        <button class="tut-nav-item" data-step="6" onclick="gotoStep(6)"><span class="tut-step-num">6</span><span>Try the Comparator</span></button>
+        <button class="tut-nav-item" data-step="7" onclick="gotoStep(7)"><span class="tut-step-num">7</span><span>Evaluate Quality</span></button>
+        <button class="tut-nav-item" data-step="8" onclick="gotoStep(8)"><span class="tut-step-num">8</span><span>Next Steps &amp; RAG</span></button>
+        <button class="tut-nav-item" data-step="9" onclick="gotoStep(9)"><span class="tut-step-num">9</span><span>PEFT, LoRA &amp; QLoRA</span></button>
+      </nav>
+      <div class="tut-progress-wrap">
+        <div class="tut-progress-bar"><div id="tut-progress-fill" style="width:11.1%"></div></div>
+        <span id="tut-progress-text">Step 1 of 9</span>
+      </div>
+    </aside>
+
+    <!-- ── Content Area ──────────────────────────────────────────────────── -->
+    <main class="tut-content">
+
+      <!-- ══ STEP 1 ══════════════════════════════════════════════════════════ -->
+      <div class="tut-step active" id="tut-step-1">
+        <div class="tut-step-header">
+          <span class="tut-step-badge">Step 1</span>
+          <h2>What Is Model Tuning?</h2>
+          <p class="tut-step-intro">Understand why generic LLMs fail in specialized domains and how tuning fixes this.</p>
+        </div>
+        <div class="tut-callout info">
+          <strong>🎯 The Problem:</strong> A generic model like <code>llama3.2</code> has broad knowledge but no specialization.
+          Ask it about CNC spindle vibration thresholds — it guesses. Ask a tuned model — it cites ISO 10816 zone limits
+          to the millimeter per second and tells you to stop production.
+        </div>
+        <h3>Three Levels of Tuning</h3>
+        <div class="tut-level-grid">
+          <div class="tut-level-card level-1">
+            <div class="tut-level-badge">Level 1</div>
+            <h4>⚙️ Modelfile Engineering</h4>
+            <div class="tut-level-time">⏱ 5 minutes · No GPU</div>
+            <p>System prompt + few-shot examples + parameter tuning. Works immediately with any Ollama model.</p>
+            <div class="tut-level-detail">
+              <strong>What changes:</strong> Behaviour (not weights)<br>
+              <strong>How:</strong> <code>ollama create mfg-expert -f Modelfile</code><br>
+              <strong>Best for:</strong> Format enforcement, domain vocabulary, structured outputs
+            </div>
+          </div>
+          <div class="tut-level-card level-2">
+            <div class="tut-level-badge">Level 2</div>
+            <h4>🔍 RAG</h4>
+            <div class="tut-level-time">⏱ Hours · No GPU</div>
+            <p>Retrieval-Augmented Generation. Inject knowledge from <code>knowledge_base.md</code> at query time.</p>
+            <div class="tut-level-detail">
+              <strong>What changes:</strong> Context per request<br>
+              <strong>How:</strong> Embed docs → vector store → retrieve → inject<br>
+              <strong>Best for:</strong> Live knowledge, large doc sets, updatable facts
+            </div>
+          </div>
+          <div class="tut-level-card level-3">
+            <div class="tut-level-badge">Level 3</div>
+            <h4>🧠 LoRA Fine-Tuning</h4>
+            <div class="tut-level-time">⏱ Hours–Days · GPU needed</div>
+            <p>Actual gradient-based weight updates using <code>manufacturing_train.jsonl</code> via Unsloth.</p>
+            <div class="tut-level-detail">
+              <strong>What changes:</strong> Model weights (adapter layers)<br>
+              <strong>How:</strong> Unsloth → GGUF export → Ollama import<br>
+              <strong>Best for:</strong> Deep domain fluency, implicit knowledge, style transfer
+            </div>
+          </div>
+        </div>
+        <div class="tut-callout success">
+          <strong>✅ This project demonstrates Level 1</strong> — the fastest path to a domain-tuned model.
+          Level 3 LoRA instructions are in Step 8 when you're ready to go deeper.
+        </div>
+        <h3>Before vs After — Side by Side</h3>
+        <div class="tut-diff-wrap">
+          <div class="tut-diff-col">
+            <div class="tut-diff-label base-diff">BASE MODEL — llama3.2</div>
+            <div class="tut-diff-body bad">
+              <strong>Q:</strong> "CNC spindle vibration jumped to 3.9 mm/s"<br><br>
+              <strong>A:</strong> "Increased vibration can indicate issues with bearings or alignment.
+              You should check the machine and consult a technician. Regular maintenance
+              is important for machine health."
+            </div>
+          </div>
+          <div class="tut-diff-col">
+            <div class="tut-diff-label tuned-diff">TUNED MODEL — mfg-expert</div>
+            <div class="tut-diff-body good">
+              <strong>Q:</strong> "CNC spindle vibration jumped to 3.9 mm/s"<br><br>
+              <strong>A:</strong> ⚠️ <strong>SAFETY NOTE:</strong> 3.9 mm/s exceeds ISO 10816-3 Zone C threshold (2.3 mm/s).
+              <strong>Stop production immediately.</strong><br><br>
+              <strong>Root Cause:</strong> Bearing inner race spalling or coolant contamination<br>
+              <strong>Action:</strong> Reduce speed 30%, schedule bearing replacement within 48h<br>
+              <strong>Standard:</strong> ISO 10816-3, Zone C→D boundary at 4.5 mm/s
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ STEP 2 ══════════════════════════════════════════════════════════ -->
+      <div class="tut-step" id="tut-step-2">
+        <div class="tut-step-header">
+          <span class="tut-step-badge">Step 2</span>
+          <h2>Project Setup</h2>
+          <p class="tut-step-intro">Environment check and folder structure walkthrough.</p>
+        </div>
+        <h3>Prerequisites</h3>
+        <table class="tut-table">
+          <thead><tr><th>Tool</th><th>Purpose</th><th>Verify</th></tr></thead>
+          <tbody>
+            <tr><td><code>Ollama</code></td><td>Local LLM runtime</td><td><code>ollama --version</code></td></tr>
+            <tr><td><code>Python 3.9+</code></td><td>Scripts &amp; UI backend</td><td><code>python --version</code></td></tr>
+            <tr><td><code>llama3.2</code></td><td>Base model weights</td><td><code>ollama list</code></td></tr>
+            <tr><td>pip packages</td><td>FastAPI, httpx, uvicorn</td><td><code>pip install -r ui/requirements.txt</code></td></tr>
+          </tbody>
+        </table>
+        <h3>Run the Setup Script</h3>
+        <pre class="tut-code">cd Model-Tuning
+python scripts/setup_env.py</pre>
+        <div class="tut-callout success">
+          Expected output:<br>
+          <code>[OK]   Python 3.11.x</code><br>
+          <code>[OK]   Ollama API running. Models available: 3</code><br>
+          <code>[READY] Environment is set up.</code>
+        </div>
+        <h3>Project Structure</h3>
+        <div class="tut-file-tree">
+          <div class="tut-tree-item root">📁 Model-Tuning/</div>
+          <div class="tut-tree-item l1">📁 data/</div>
+          <div class="tut-tree-item l2 annotated" data-note="10 expert Q&amp;A conversations in ChatML format">📄 manufacturing_train.jsonl</div>
+          <div class="tut-tree-item l2 annotated" data-note="8 evaluation test cases with expected keywords">📄 manufacturing_test.jsonl</div>
+          <div class="tut-tree-item l2 annotated" data-note="OEE benchmarks, ISO thresholds, FMEA tables (for RAG)">📄 knowledge_base.md</div>
+          <div class="tut-tree-item l1">📁 modelfiles/</div>
+          <div class="tut-tree-item l2 annotated" data-note="BEFORE — minimal system prompt, temperature 0.7">📄 Modelfile.base</div>
+          <div class="tut-tree-item l2 annotated" data-note="AFTER — rich domain prompt, few-shot examples, temperature 0.3">📄 Modelfile.manufacturing</div>
+          <div class="tut-tree-item l1">📁 scripts/</div>
+          <div class="tut-tree-item l2 annotated" data-note="Check Python, Ollama, model availability, install deps">📄 setup_env.py</div>
+          <div class="tut-tree-item l2 annotated" data-note="Validate JSONL + export to Alpaca JSON for LoRA">📄 prepare_data.py</div>
+          <div class="tut-tree-item l2 annotated" data-note="ollama create mfg-base + mfg-expert">📄 create_models.py</div>
+          <div class="tut-tree-item l2 annotated" data-note="Score both models on 8 test cases, save timestamped JSON">📄 evaluate_models.py</div>
+          <div class="tut-tree-item l1">📁 ui/</div>
+          <div class="tut-tree-item l2 annotated" data-note="FastAPI backend — streaming SSE proxy to Ollama">📄 app.py</div>
+          <div class="tut-tree-item l2 annotated" data-note="This page you are reading right now">📄 static/index.html</div>
+          <div class="tut-tree-item l1">📁 tests/</div>
+          <div class="tut-tree-item l2 annotated" data-note="22 pytest tests — data integrity, Modelfiles, scoring">📄 test_cases.py</div>
+        </div>
+      </div>
+
+      <!-- ══ STEP 3 ══════════════════════════════════════════════════════════ -->
+      <div class="tut-step" id="tut-step-3">
+        <div class="tut-step-header">
+          <span class="tut-step-badge">Step 3</span>
+          <h2>Training Data Format</h2>
+          <p class="tut-step-intro">The quality of training data determines the quality of tuning. Learn the ChatML conversation format.</p>
+        </div>
+        <h3>Format: One Conversation Per Line (JSONL)</h3>
+        <p class="tut-text">Each line in <code>manufacturing_train.jsonl</code> is a complete JSON object — a conversation with three roles:</p>
+        <pre class="tut-code">{"messages": [
+  {
+    "role": "system",
+    "content": "You are ManuBot, a senior manufacturing engineer AI..."
+  },
+  {
+    "role": "user",
+    "content": "CNC spindle vibration jumped from 0.8 to 3.9 mm/s. What should I do?"
+  },
+  {
+    "role": "assistant",
+    "content": "**Root Cause:** Bearing inner race spalling...\n\n**Recommended Action:** 1. Stop spindle..."
+  }
+]}</pre>
+        <h3>Role Breakdown</h3>
+        <table class="tut-table">
+          <thead><tr><th>Role</th><th>Purpose</th><th>Key Tip</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><code>system</code></td>
+              <td>Sets the AI persona and constraints for all conversations</td>
+              <td>Be specific — list exact skills, response format, knowledge areas</td>
+            </tr>
+            <tr>
+              <td><code>user</code></td>
+              <td>The question or problem statement</td>
+              <td>Vary phrasing — don't repeat the same question with different words</td>
+            </tr>
+            <tr>
+              <td><code>assistant</code></td>
+              <td>The ideal answer the model should learn to reproduce</td>
+              <td>Follow your desired format <em>exactly</em> — this is the gold standard</td>
+            </tr>
+          </tbody>
+        </table>
+        <h3>Good vs Bad Training Examples</h3>
+        <div class="tut-compare-wrap">
+          <div>
+            <div class="tut-compare-label bad-label">❌ Bad Training Example</div>
+            <pre class="tut-code bad-code">{"messages": [
+  {"role": "system",
+   "content": "You are a helper."},
+  {"role": "user",
+   "content": "OEE dropped?"},
+  {"role": "assistant",
+   "content": "OEE drop could be many things. Check the machine."}
+]}</pre>
+            <ul class="tut-tip-list bad-tips">
+              <li>Vague system prompt — no domain context</li>
+              <li>No structured response format enforced</li>
+              <li>9-word response — far too short</li>
+              <li>No standards or thresholds cited</li>
+            </ul>
+          </div>
+          <div>
+            <div class="tut-compare-label good-label">✅ Good Training Example</div>
+            <pre class="tut-code good-code">{"messages": [
+  {"role": "system",
+   "content": "You are ManuBot, expert in OEE,
+   FMEA, ISO 22400... Always respond:
+   Root Cause / Action / Priority / Standard."},
+  {"role": "user",
+   "content": "OEE dropped 82%→61%. Availability 71%."},
+  {"role": "assistant",
+   "content": "**Root Cause:** Unplanned downtime...
+   \n**Recommended Action:** 1. Run 5-Why...
+   \n**Priority:** HIGH
+   \n**Standard:** ISO 22400-2"}
+]}</pre>
+            <ul class="tut-tip-list good-tips">
+              <li>Rich system prompt with skills list</li>
+              <li>Structured format enforced in system prompt</li>
+              <li>Specific numbers (82%→61%, 71%)</li>
+              <li>Standard cited (ISO 22400-2)</li>
+            </ul>
+          </div>
+        </div>
+        <h3>Validate Your Data</h3>
+        <pre class="tut-code">python scripts/prepare_data.py</pre>
+        <p class="tut-text">This validates all records, reports token counts, and exports to Alpaca JSON format needed for Level 3 LoRA training.</p>
+      </div>
+
+      <!-- ══ STEP 4 ══════════════════════════════════════════════════════════ -->
+      <div class="tut-step" id="tut-step-4">
+        <div class="tut-step-header">
+          <span class="tut-step-badge">Step 4</span>
+          <h2>Modelfile Engineering</h2>
+          <p class="tut-step-intro">The Modelfile is Ollama's configuration format — a simple but powerful tuning mechanism that works instantly.</p>
+        </div>
+        <h3>Side-by-Side: Base vs Tuned Modelfile</h3>
+        <div class="tut-modelfile-diff">
+          <div>
+            <div class="tut-diff-label base-diff">Modelfile.base — BEFORE</div>
+            <pre class="tut-code"><span class="mf-from">FROM llama3.2</span>
+
+<span class="mf-param">PARAMETER temperature 0.7</span>
+
+<span class="mf-system">SYSTEM """You are a helpful assistant."""
+</span></pre>
+            <ul class="tut-tip-list bad-tips">
+              <li>Generic identity — no manufacturing domain</li>
+              <li>High temperature → unpredictable answers</li>
+              <li>No response structure enforced</li>
+              <li>No domain vocabulary seeded</li>
+              <li>No examples → no output pattern</li>
+            </ul>
+          </div>
+          <div>
+            <div class="tut-diff-label tuned-diff">Modelfile.manufacturing — AFTER</div>
+            <pre class="tut-code"><span class="mf-from">FROM llama3.2</span>
+
+<span class="mf-param">PARAMETER temperature 0.3</span>
+<span class="mf-param">PARAMETER top_p 0.85</span>
+<span class="mf-param">PARAMETER num_ctx 8192</span>
+<span class="mf-param">PARAMETER repeat_penalty 1.1</span>
+
+<span class="mf-system">SYSTEM """
+You are ManuBot, a senior manufacturing
+engineer AI with 20+ years of expertise
+in OEE, FMEA, ISO 10816, AIAG-VDA FMEA...
+
+Always structure responses as:
+**Root Cause:** ...
+**Recommended Action:** ...
+**Priority:** HIGH / MEDIUM / LOW
+**Relevant Standard:** ...
+"""</span>
+
+<span class="mf-message">MESSAGE user "Spindle at 3.9 mm/s"
+MESSAGE assistant "**Root Cause:** ..."</span></pre>
+            <ul class="tut-tip-list good-tips">
+              <li>Domain persona with explicit expertise list</li>
+              <li>Low temperature → precise, consistent answers</li>
+              <li>Larger context window for long structured responses</li>
+              <li>Exact output format enforced in system prompt</li>
+              <li>Few-shot MESSAGE pairs demonstrate the format</li>
+            </ul>
+          </div>
+        </div>
+        <h3>Key Parameters Explained</h3>
+        <table class="tut-table">
+          <thead><tr><th>Parameter</th><th>Base</th><th>Tuned</th><th>Effect</th></tr></thead>
+          <tbody>
+            <tr><td><code>temperature</code></td><td>0.7</td><td>0.3</td><td>Lower = more deterministic. Critical for technical accuracy.</td></tr>
+            <tr><td><code>top_p</code></td><td>—</td><td>0.85</td><td>Nucleus sampling — limits token selection to most probable.</td></tr>
+            <tr><td><code>num_ctx</code></td><td>2048</td><td>8192</td><td>Context window — allows longer structured multi-section responses.</td></tr>
+            <tr><td><code>repeat_penalty</code></td><td>1.0</td><td>1.1</td><td>Reduces repetitive phrases in long responses.</td></tr>
+          </tbody>
+        </table>
+        <div class="tut-callout info">
+          <strong>💡 The MESSAGE directive</strong> is Ollama's few-shot mechanism.
+          Each <code>MESSAGE user / MESSAGE assistant</code> pair teaches the model exactly what
+          a correct response looks like. More examples = stronger format adherence.
+        </div>
+      </div>
+
+      <!-- ══ STEP 5 ══════════════════════════════════════════════════════════ -->
+      <div class="tut-step" id="tut-step-5">
+        <div class="tut-step-header">
+          <span class="tut-step-badge">Step 5</span>
+          <h2>Build Your Models</h2>
+          <p class="tut-step-intro">Register both models with Ollama in four quick steps.</p>
+        </div>
+        <div class="tut-steps-list">
+          <div class="tut-cmd-step">
+            <div class="tut-cmd-num">1</div>
+            <div class="tut-cmd-body">
+              <div class="tut-cmd-title">Pull the base model (if not already done)</div>
+              <pre class="tut-code">ollama pull llama3.2</pre>
+            </div>
+          </div>
+          <div class="tut-cmd-step">
+            <div class="tut-cmd-num">2</div>
+            <div class="tut-cmd-body">
+              <div class="tut-cmd-title">Create both custom models</div>
+              <pre class="tut-code">python scripts/create_models.py</pre>
+              <p class="tut-text">This runs <code>ollama create mfg-base -f modelfiles/Modelfile.base</code> and <code>ollama create mfg-expert -f modelfiles/Modelfile.manufacturing</code>, then smoke-tests each model.</p>
+            </div>
+          </div>
+          <div class="tut-cmd-step">
+            <div class="tut-cmd-num">3</div>
+            <div class="tut-cmd-body">
+              <div class="tut-cmd-title">Verify both models are registered</div>
+              <pre class="tut-code">ollama list</pre>
+              <div class="tut-callout success">Expected output includes:<br>
+                <code>mfg-base     &lt;hash&gt;  ~2 GB</code><br>
+                <code>mfg-expert   &lt;hash&gt;  ~2 GB</code>
+              </div>
+            </div>
+          </div>
+          <div class="tut-cmd-step">
+            <div class="tut-cmd-num">4</div>
+            <div class="tut-cmd-body">
+              <div class="tut-cmd-title">Start the UI (if not already running)</div>
+              <pre class="tut-code">cd ui
+uvicorn app:app --reload --port 8000</pre>
+              <p class="tut-text">Open <a href="http://localhost:8000" target="_blank" class="tut-link">http://localhost:8000</a> — the health badge should show <span style="display:inline;background:#064e3b;color:#34d399;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600">✓ Ollama Online</span></p>
+            </div>
+          </div>
+        </div>
+        <div class="tut-callout warn">
+          <strong>⚠ Troubleshooting:</strong><br>
+          • <em>Cannot connect to Ollama</em> → Run <code>ollama serve</code> in a separate terminal<br>
+          • <em>Model not found</em> → Re-run <code>python scripts/create_models.py</code><br>
+          • <em>Port 8000 in use</em> → Use <code>--port 8001</code> and reload the page
+        </div>
+      </div>
+
+      <!-- ══ STEP 6 ══════════════════════════════════════════════════════════ -->
+      <div class="tut-step" id="tut-step-6">
+        <div class="tut-step-header">
+          <span class="tut-step-badge">Step 6</span>
+          <h2>Try the Comparator</h2>
+          <p class="tut-step-intro">Load a ready-made prompt and watch both models respond in real time — side by side.</p>
+        </div>
+        <div class="tut-callout info">
+          <strong>How to use:</strong> Click <strong>Load Prompt →</strong> on any card below. The prompt is injected
+          into the comparator and you are switched to the <strong>Compare Models</strong> tab automatically.
+          Just click <strong>Compare ▶</strong> to start both streams.
+        </div>
+        <h3>4 Demo Prompts — Ordered by Impact</h3>
+        <div class="demo-prompt-card">
+          <div class="demo-prompt-header">
+            <span class="demo-num">1</span>
+            <div>
+              <div class="demo-category">Safety · Equipment Fault</div>
+              <div class="demo-title">CNC Spindle Vibration — ISO 10816 Threshold</div>
+            </div>
+            <button class="btn-try" onclick="tryPrompt('CNC spindle vibration has jumped from 0.8 mm/s to 3.9 mm/s over the last shift. What is the likely root cause and what action should I take immediately?')">Load Prompt →</button>
+          </div>
+          <p class="demo-desc">The base model gives generic bearing advice. The tuned model cites ISO 10816-3 Zone C/D thresholds, declares a safety stop, and provides a prioritized corrective action sequence with 48-hour timeline.</p>
+        </div>
+        <div class="demo-prompt-card">
+          <div class="demo-prompt-header">
+            <span class="demo-num">2</span>
+            <div>
+              <div class="demo-category">OEE Analysis</div>
+              <div class="demo-title">OEE Drop from 82% to 61%</div>
+            </div>
+            <button class="btn-try" onclick="tryPrompt('Our OEE dropped from 82% to 61% this week. Availability went from 94% to 71%. What is happening and how do I recover quickly?')">Load Prompt →</button>
+          </div>
+          <p class="demo-desc">Base model explains OEE concepts. Tuned model isolates the Availability bottleneck, applies the 5-Why framework to unplanned downtime, and references ISO 22400-2 KPI benchmarks (World Class OEE &gt; 85%).</p>
+        </div>
+        <div class="demo-prompt-card">
+          <div class="demo-prompt-header">
+            <span class="demo-num">3</span>
+            <div>
+              <div class="demo-category">FMEA · Risk Assessment</div>
+              <div class="demo-title">MIG Welding Process FMEA</div>
+            </div>
+            <button class="btn-try" onclick="tryPrompt('Perform a FMEA analysis for a MIG welding process. Identify the top 3 failure modes with RPN scores and recommend detection controls.')">Load Prompt →</button>
+          </div>
+          <p class="demo-desc">Base model gives a generic list. Tuned model produces RPN scores (Severity × Occurrence × Detection), references AIAG-VDA FMEA 2019, and recommends specific poka-yoke and SPC detection controls.</p>
+        </div>
+        <div class="demo-prompt-card">
+          <div class="demo-prompt-header">
+            <span class="demo-num">4</span>
+            <div>
+              <div class="demo-category">Lean · Continuous Improvement</div>
+              <div class="demo-title">Reducing Stamping Press Changeover Time</div>
+            </div>
+            <button class="btn-try" onclick="tryPrompt('We have a 3-hour changeover time on a stamping press. What Lean tools should I apply and in what order to reduce this to under 30 minutes?')">Load Prompt →</button>
+          </div>
+          <p class="demo-desc">Base model mentions SMED. Tuned model structures the full SMED methodology — separating internal vs external activities, references Shingo&apos;s Single-Minute Exchange of Die, and provides a phased 90-day implementation timeline.</p>
+        </div>
+      </div>
+
+      <!-- ══ STEP 7 ══════════════════════════════════════════════════════════ -->
+      <div class="tut-step" id="tut-step-7">
+        <div class="tut-step-header">
+          <span class="tut-step-badge">Step 7</span>
+          <h2>Evaluate &amp; Score Quality</h2>
+          <p class="tut-step-intro">Run automated evaluation across 8 manufacturing test cases and understand what the scores mean.</p>
+        </div>
+        <h3>Run the Evaluation Script</h3>
+        <pre class="tut-code">python scripts/evaluate_models.py</pre>
+        <h3>Scoring Methodology</h3>
+        <table class="tut-table">
+          <thead><tr><th>Component</th><th>Weight</th><th>How It's Measured</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><strong>Keyword Score</strong></td><td>40%</td>
+              <td>% of domain keywords found (e.g., "ISO 10816", "RPN", "OEE", "FMEA")</td>
+            </tr>
+            <tr>
+              <td><strong>Format Score</strong></td><td>35%</td>
+              <td>% of structural markers present (Root Cause, Recommended Action, Priority, Standard)</td>
+            </tr>
+            <tr>
+              <td><strong>Length Score</strong></td><td>25%</td>
+              <td>50–600 words = 100%. Less than 50 words = 30%. Over 600 words = 80%.</td>
+            </tr>
+          </tbody>
+        </table>
+        <h3>Typical Results — Base vs Tuned</h3>
+        <div class="tut-score-example">
+          <div class="tut-score-row">
+            <span class="tut-score-category">predictive_maintenance</span>
+            <div class="tut-score-bars">
+              <div class="tut-score-bar-wrap">
+                <span class="tut-score-label base-diff">BASE</span>
+                <div class="tut-bar-bg"><div class="tut-bar-fill base-fill" data-width="41">41%</div></div>
+              </div>
+              <div class="tut-score-bar-wrap">
+                <span class="tut-score-label tuned-diff">TUNED</span>
+                <div class="tut-bar-bg"><div class="tut-bar-fill tuned-fill" data-width="87">87%</div></div>
+              </div>
+            </div>
+          </div>
+          <div class="tut-score-row">
+            <span class="tut-score-category">fmea</span>
+            <div class="tut-score-bars">
+              <div class="tut-score-bar-wrap">
+                <span class="tut-score-label base-diff">BASE</span>
+                <div class="tut-bar-bg"><div class="tut-bar-fill base-fill" data-width="35">35%</div></div>
+              </div>
+              <div class="tut-score-bar-wrap">
+                <span class="tut-score-label tuned-diff">TUNED</span>
+                <div class="tut-bar-bg"><div class="tut-bar-fill tuned-fill" data-width="82">82%</div></div>
+              </div>
+            </div>
+          </div>
+          <div class="tut-score-row">
+            <span class="tut-score-category">oee_analysis</span>
+            <div class="tut-score-bars">
+              <div class="tut-score-bar-wrap">
+                <span class="tut-score-label base-diff">BASE</span>
+                <div class="tut-bar-bg"><div class="tut-bar-fill base-fill" data-width="52">52%</div></div>
+              </div>
+              <div class="tut-score-bar-wrap">
+                <span class="tut-score-label tuned-diff">TUNED</span>
+                <div class="tut-bar-bg"><div class="tut-bar-fill tuned-fill" data-width="91">91%</div></div>
+              </div>
+            </div>
+          </div>
+          <div class="tut-score-row">
+            <span class="tut-score-category">safety</span>
+            <div class="tut-score-bars">
+              <div class="tut-score-bar-wrap">
+                <span class="tut-score-label base-diff">BASE</span>
+                <div class="tut-bar-bg"><div class="tut-bar-fill base-fill" data-width="45">45%</div></div>
+              </div>
+              <div class="tut-score-bar-wrap">
+                <span class="tut-score-label tuned-diff">TUNED</span>
+                <div class="tut-bar-bg"><div class="tut-bar-fill tuned-fill" data-width="88">88%</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <h3>Run the Automated Test Suite</h3>
+        <pre class="tut-code">pip install pytest
+pytest tests/ -v</pre>
+        <div class="tut-callout info">
+          <strong>📝 Results saved automatically</strong> to <code>data/eval_results_YYYYMMDD_HHMMSS.json</code>.
+          Run evaluations after every Modelfile update to track improvement over time.
+        </div>
+      </div>
+
+      <!-- ══ STEP 8 ══════════════════════════════════════════════════════════ -->
+      <div class="tut-step" id="tut-step-8">
+        <div class="tut-step-header">
+          <span class="tut-step-badge">Step 8</span>
+          <h2>Next Steps &amp; LoRA Fine-Tuning</h2>
+          <p class="tut-step-intro">You have mastered Level 1. Here is how to go deeper.</p>
+        </div>
+        <h3>Quickest Win: Add More Training Data</h3>
+        <p class="tut-text">Append more expert conversations to <code>manufacturing_train.jsonl</code>, then rebuild:</p>
+        <pre class="tut-code"># Add a record to data/manufacturing_train.jsonl
+{"messages": [
+  {"role": "system",    "content": "You are ManuBot..."},
+  {"role": "user",      "content": "YOUR QUESTION"},
+  {"role": "assistant", "content": "**Root Cause:** ...\n\n**Recommended Action:** ...\n\n**Priority:** HIGH\n\n**Standard:** ISO ..."}
+]}
+
+# Validate + rebuild
+python scripts/prepare_data.py
+python scripts/create_models.py</pre>
+        <h3>Level 2: RAG with knowledge_base.md</h3>
+        <div class="tut-level-card level-2" style="margin-bottom:20px">
+          <div class="tut-level-badge">Level 2</div>
+          <h4>🔍 Retrieval-Augmented Generation</h4>
+          <p>Instead of baking knowledge into the Modelfile, retrieve relevant context per query from <code>data/knowledge_base.md</code>.</p>
+          <div class="tut-level-detail">
+            <strong>Implementation steps:</strong><br>
+            1. Embed <code>knowledge_base.md</code> into a vector store (ChromaDB / FAISS)<br>
+            2. At query time, retrieve top-3 most relevant chunks<br>
+            3. Inject them into the system prompt as live context<br>
+            4. Model answers with facts grounded in your documents<br><br>
+            <strong>Best for:</strong> Large SOPs, ISO standards documents, frequently updated facts, compliance requirements
+          </div>
+        </div>
+        <div class="tut-callout info" style="margin-top:20px">
+          <strong>🚀 Ready for gradient-based training?</strong><br>
+          Step 9 covers the full PEFT ecosystem — LoRA, QLoRA, hyperparameter choices, and the
+          ready-to-run <code>scripts/finetune_lora.py</code> script for your manufacturing data.
+          <br><br>
+          <button class="btn-primary" onclick="stepNav(1)">Continue to PEFT &amp; LoRA →</button>
+        </div>
+      </div>
+
+      <!-- ══ STEP 9 ══════════════════════════════════════════════════════════ -->
+      <div class="tut-step" id="tut-step-9">
+        <div class="tut-step-header">
+          <span class="tut-step-badge">Step 9</span>
+          <h2>PEFT, LoRA &amp; QLoRA Fine-Tuning</h2>
+          <p class="tut-step-intro">Go beyond Modelfiles — use gradient-based training to deeply embed domain expertise into model weights.</p>
+        </div>
+
+        <h3>The Fine-Tuning Landscape</h3>
+        <div class="tut-callout info">
+          <strong>Full Fine-Tuning</strong> updates every parameter (7B+), requiring 80–140 GB VRAM.
+          <strong>PEFT</strong> (Parameter-Efficient Fine-Tuning) is an umbrella for methods that update only ~0.1–1% of parameters,
+          reaching 90–95% of full fine-tuning quality at a fraction of the cost.
+        </div>
+
+        <div class="tut-technique-grid">
+          <div class="tut-technique-card">
+            <div class="technique-badge peft-badge">PEFT</div>
+            <h4>Parameter-Efficient Fine-Tuning</h4>
+            <p>Umbrella term covering LoRA, QLoRA, IA³, Prefix Tuning, and Prompt Tuning. Base weights stay frozen; only small adapter layers are trained.</p>
+            <ul class="tut-tech-list">
+              <li>~0.1–1% of parameters trained</li>
+              <li>Adapters saved as tiny files (&lt;200 MB)</li>
+              <li>Multiple adapters share one base model</li>
+            </ul>
+          </div>
+          <div class="tut-technique-card">
+            <div class="technique-badge lora-badge">LoRA</div>
+            <h4>Low-Rank Adaptation</h4>
+            <p>Inserts trainable low-rank matrices A and B alongside frozen transformer weights. After training, they merge back — zero extra inference latency.</p>
+            <ul class="tut-tech-list">
+              <li>Rank <em>r</em> = 4–64 (start with 16)</li>
+              <li>Alpha α = scaling factor (typically = r)</li>
+              <li>~24–40 GB VRAM for a 7B model</li>
+            </ul>
+          </div>
+          <div class="tut-technique-card">
+            <div class="technique-badge qlora-badge">QLoRA</div>
+            <h4>Quantized LoRA</h4>
+            <p>Loads the base model in 4-bit NF4 quantization (bitsandbytes), then applies LoRA adapters in full precision — the standard choice for consumer GPUs.</p>
+            <ul class="tut-tech-list">
+              <li>7B model fits in 6–8 GB VRAM</li>
+              <li>NF4 quantization via bitsandbytes</li>
+              <li>~5–8% quality loss vs full fine-tuning</li>
+            </ul>
+          </div>
+        </div>
+
+        <h3>How LoRA Works — The Math</h3>
+        <p class="tut-text">For a frozen weight matrix <strong>W</strong> (d × d), LoRA trains two small matrices instead of updating all d² weights:</p>
+        <div class="tut-lora-math">
+          <span class="math-block">W&prime; = W + (α ÷ r) × B × A</span>
+          <span class="math-label">A ∈ ℝ<sup>r×d</sup> &nbsp;·&nbsp; B ∈ ℝ<sup>d×r</sup> &nbsp;—&nbsp; where r ≪ d &nbsp;(e.g. r=16, d=4096 → 131K params vs 16.7M)</span>
+        </div>
+        <p class="tut-text">Only A and B are trained. W stays frozen. After training, B×A is merged back into W so inference speed is identical to the original model.</p>
+
+        <h3>Comparison: Full FT vs LoRA vs QLoRA</h3>
+        <table class="tut-table">
+          <thead>
+            <tr><th>Property</th><th>Full Fine-Tuning</th><th>LoRA</th><th>QLoRA</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Parameters trained</td><td>100% (~7B)</td><td>~0.4% (~28M)</td><td>~0.4% (~28M)</td></tr>
+            <tr><td>VRAM — 7B model</td><td>80–140 GB</td><td>24–40 GB</td><td>6–12 GB</td></tr>
+            <tr><td>Base model precision</td><td>bfloat16</td><td>bfloat16</td><td>4-bit NF4</td></tr>
+            <tr><td>Adapter file size</td><td>Full model copy</td><td>50–200 MB</td><td>50–200 MB</td></tr>
+            <tr><td>Training time (10K samples)</td><td>4–8 hours</td><td>1–2 hours</td><td>1–3 hours</td></tr>
+            <tr><td>Quality vs full fine-tune</td><td>Baseline</td><td>90–95%</td><td>85–92%</td></tr>
+            <tr><td>Consumer GPU (RTX 4090)</td><td>❌ No</td><td>⚠️ Borderline</td><td>✅ Yes</td></tr>
+          </tbody>
+        </table>
+
+        <h3>Run QLoRA on Your Manufacturing Data</h3>
+        <p class="tut-text">The project includes <code>scripts/finetune_lora.py</code> — a ready-to-run QLoRA script using Unsloth:</p>
+        <pre class="tut-code"># Step 1 — Install dependencies
+pip install "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git"
+pip install bitsandbytes datasets trl
+
+# Step 2 — Export training data to Alpaca format
+python scripts/prepare_data.py
+# Generates: data/manufacturing_train_alpaca.json
+
+# Step 3 — Run QLoRA fine-tuning (~1–3h on RTX 4090)
+python scripts/finetune_lora.py
+
+# Step 4 — Script auto-exports a GGUF file:
+#   outputs/mfg-qlora.Q4_K_M.gguf
+
+# Step 5 — Import into Ollama and compare!
+ollama create mfg-expert-qlora -f modelfiles/Modelfile.qlora
+# Refresh the Comparator and select mfg-expert-qlora</pre>
+
+        <h3>Key Hyperparameters</h3>
+        <div class="tut-level-grid" style="margin-top:12px">
+          <div class="tut-level-card level-3">
+            <div class="tut-level-badge">rank (r)</div>
+            <div class="tut-level-detail">
+              Controls adapter expressiveness. r=4 is fast and lightweight; r=64 is richer.
+              <strong>Recommended: r=16</strong> for manufacturing domain (niche vocabulary + structured answer format).
+            </div>
+          </div>
+          <div class="tut-level-card level-3">
+            <div class="tut-level-badge">alpha (α)</div>
+            <div class="tut-level-detail">
+              Scaling factor for LoRA updates. Start with α = r (e.g. α=16 when r=16).
+              Higher α = stronger LoRA influence. Can cause overfitting on small datasets.
+            </div>
+          </div>
+          <div class="tut-level-card level-3">
+            <div class="tut-level-badge">target_modules</div>
+            <div class="tut-level-detail">
+              Which transformer layers get LoRA adapters. For LLaMA models, use all projection layers:
+              <code>q_proj, v_proj, k_proj, o_proj, gate_proj, up_proj, down_proj</code>.
+            </div>
+          </div>
+        </div>
+
+        <div class="tut-callout success" style="margin-top:24px">
+          <strong>🎉 Tutorial Complete!</strong><br>
+          You now understand the full spectrum of LLM tuning — zero-code Modelfiles → RAG → LoRA → QLoRA.
+          Run <code>python scripts/finetune_lora.py</code> to train your first QLoRA adapter, import it into Ollama,
+          and compare all models side-by-side in the Comparator.
+          <br><br>
+          <button class="btn-primary" onclick="showTab('compare')">Go to Compare Models ▶</button>
+        </div>
+      </div>
+
+      <!-- ── Step Navigation Buttons ───────────────────────────────────────── -->
+      <div class="tut-nav-buttons">
+        <button id="tut-prev-btn" class="btn-secondary" onclick="stepNav(-1)" disabled>← Previous</button>
+        <button id="tut-next-btn" class="btn-primary" onclick="stepNav(1)">Next Step →</button>
+      </div>
+
+    </main>
+  </div>
+</div><!-- end #view-tutorial -->
+
+<script src="/static/app.js"></script>
+</body>
+</html>

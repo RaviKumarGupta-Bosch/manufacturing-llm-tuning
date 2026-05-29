@@ -23,8 +23,7 @@ Model-Tuning/
 │   ├── setup_env.py                 ← Checks Ollama, installs dependencies
 │   ├── prepare_data.py              ← Validates and formats training data
 │   ├── create_models.py             ← Creates Ollama models from Modelfiles
-│   ├── evaluate_models.py           ← Runs test cases, scores responses
-│   └── finetune_lora.py             ← QLoRA fine-tuning with Unsloth (Level 3)
+│   └── evaluate_models.py          ← Runs test cases, scores responses
 ├── ui/
 │   ├── app.py                       ← FastAPI backend
 │   ├── requirements.txt
@@ -33,7 +32,8 @@ Model-Tuning/
 │       ├── style.css
 │       └── app.js
 └── tests/
-    └── test_cases.py                ← Pytest unit tests for model behavior
+    ├── test_cases.py                ← Pytest unit tests for model behavior
+    └── test_data.py                 ← Data validation tests
 ```
 
 ---
@@ -53,15 +53,14 @@ This project implements all three and lets you compare them live.
 ## Quick Start (5 minutes)
 
 ```bash
-# 1. Clone this repo
-git clone https://github.com/RaviKumarGupta-Bosch/manufacturing-llm-tuning
-cd manufacturing-llm-tuning
+# 1. Clone / open this folder in terminal
+cd "c:\Users\PLT3KOR\Documents\AI\Public\Model-Tuning"
 
 # 2. Install Python dependencies
 pip install -r ui/requirements.txt
 
 # 3. Pull base model (if not already present)
-ollama pull llama2
+ollama pull llama3.2
 
 # 4. Create the manufacturing-tuned Modelfile model
 python scripts/create_models.py
@@ -84,7 +83,6 @@ uvicorn app:app --reload --port 8000
 4. **Safety Compliance** — "Operator exposed to chemical X. Protocol?"
 5. **OEE / KPI Analysis** — "OEE dropped from 85% to 67%. Investigate."
 6. **Production Scheduling** — "Optimize shift plan given current downtime."
-7. **PEFT / LoRA / QLoRA** — "Explain how LoRA fine-tuning works for domain adaptation."
 
 ---
 
@@ -92,41 +90,18 @@ uvicorn app:app --reload --port 8000
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│  BASE MODEL (llama2)                                    │
+│  BASE MODEL (llama3.2)                                  │
 │  General knowledge, no manufacturing context            │
 │  System prompt: "You are a helpful assistant."          │
 └─────────────────────────────────────────────────────────┘
            │
            ▼  Fine-Tuning / Modelfile Customization
 ┌─────────────────────────────────────────────────────────┐
-│  TUNED MODEL (mfg-expert)                               │
+│  TUNED MODEL (manufacturing-expert)                     │
 │  Manufacturing domain knowledge baked in                │
-│  Knows OEE, FMEA, ISO standards, SPC, LEAN              │
+│  Knows OEE, FMEA, ISO standards, SPC, LEAN             │
 │  Responds in structured maintenance/quality format      │
 └─────────────────────────────────────────────────────────┘
 ```
 
 See [docs/tutorial.md](docs/tutorial.md) for the complete walkthrough.
-
----
-
-## Level 3: QLoRA Fine-Tuning
-
-For actual weight-level training on consumer GPUs:
-
-```bash
-pip install "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git"
-pip install bitsandbytes datasets trl
-
-python scripts/prepare_data.py    # export to Alpaca format
-python scripts/finetune_lora.py   # run QLoRA (~1-3h on RTX 4090)
-ollama create mfg-expert-qlora -f modelfiles/Modelfile.qlora
-```
-
-See [scripts/finetune_lora.py](scripts/finetune_lora.py) for the full annotated training script.
-
----
-
-## License
-
-MIT
