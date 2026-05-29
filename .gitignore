@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+*.pyo
+.env
+venv/
+.venv/
+outputs/
+*.gguf
+*.bin
+data/eval_results_*.json
+data/manufacturing_train_alpaca.json
+.DS_Store
+*.egg-info/
+dist/
+build/
